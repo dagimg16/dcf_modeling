@@ -1,7 +1,7 @@
 import pandas as pd
 import yfinance as yf
 from datetime import datetime as dt
-
+import streamlit as st
 
 def get_risk_free_rate():
     """
@@ -324,4 +324,40 @@ metrics_2 = [
 
 interinsic_value_df = pd.DataFrame(metrics_2, columns=['', 'Value']).set_index('')
 
-print(operating_data_df)
+
+
+st.set_page_config(page_title="DCF Valuation App", layout="wide")
+
+st.title("Discounted Cash Flow (DCF) Valuation")
+
+st.write("Estimate the intrinsic value of a stock using the DCF method.")
+
+st.sidebar.header("Model Parameters")
+ticker = st.sidebar.text_input("Ticker Symbol", value="AAPL")
+wacc = st.sidebar.slider("Discount Rate (WACC)", min_value=0.05, max_value=0.15, value=0.10, step=0.005)
+terminal_growth = st.sidebar.slider("Terminal Growth Rate", min_value=0.005, max_value=0.05, value=0.025, step=0.0025)
+
+st.sidebar.header("Model Parameters")
+st.sidebar.table(wacc_df)
+
+st.write("""
+**Operating Data**
+         """)
+
+st.write(operating_data_df)
+
+st.write("""
+**Balance Sheet**
+         """)
+st.write(balance_sheet_df)
+
+st.write("""
+**Build Up Free Cash Flow**
+         """)
+st.write(cash_flow_df)
+
+st.write("""
+**Terminal Value and Intrinsic Value**
+         """)
+st.write(interinsic_value_df)
+
