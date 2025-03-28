@@ -3,218 +3,59 @@ import yfinance as yf
 from datetime import datetime as dt
 import streamlit as st
 
-def get_risk_free_rate():
-    """
-    Get the current 10-year Treasury yield (risk-free rate) from an API.
-    """
-    try:
-        tnx = yf.Ticker("^TNX")
-        current_yield = tnx.history(period="1d")['Close'].iloc[-1] * 0.01
-        return round(current_yield, 3)
-    except:
-        return 0.04
-        
-def get_wacc(ticker):
-    stock= yf.Ticker(ticker)
+from dcf import ( get_terminal_value, get_pv_tv, get_enterprise_value, get_equity_value, get_implied_share_price, get_wacc, get_ufcf_pv)
+from data import (get_revenue_projection, get_ebit_projection, get_net_debt, get_shares_outstanding, get_depreciation_and_amortization)
+from utils import (change_timestamp_to_year, forecast_balance_item)
 
-    market_cap = stock.info.get('marketCap', 0)
 
-    total_debt = stock.balance_sheet.loc['Total Debt'].iloc[0] if 'Total Debt' in stock.balance_sheet.index else 0
+st.set_page_config(page_title="DCF Valuation App", layout="wide")
 
-    beta = stock.info.get('beta', 1)
+st.title("Discounted Cash Flow (DCF) Valuation")
 
-    # Get Interest Expense & Total Revenue to estimate Cost of Debt (Rd)
-    interest_expense = stock.financials.loc['Interest Expense'].iloc[0] if 'Interest Expense' in stock.financials.index else 0
-    cost_of_debt = abs(interest_expense / total_debt) if total_debt and not pd.isna(interest_expense) else 0.05 # Default 5% if no data
-
-    tax_rate = 0.21  # Default to 21%
-
-    # Get Risk-Free Rate and Market Return (estimated ~8%)
-    risk_free_rate = get_risk_free_rate()
-    market_return = 0.08
-
-    #Calculate Cost of Equity (Re) using CAPM
-    cost_of_equity = risk_free_rate + beta * (market_return - risk_free_rate)
-    
-    # Total Value (V = E + D)
-    total_value = market_cap + total_debt
-
-    # Calculate WACC
-    wacc = (market_cap / total_value * cost_of_equity) + (total_debt / total_value * cost_of_debt * (1 - tax_rate))
-
-    return round(wacc, 4), round(beta, 2), cost_of_debt, tax_rate, risk_free_rate, market_return, cost_of_equity, total_debt, market_cap, total_value
-    
-#past 4 year revenue growth
-def get_revenue_growth(ticker):
-    stock= yf.Ticker(ticker)
-    revenue= stock.income_stmt.loc['Total Revenue'].dropna() /1e9
-    revenue = revenue.sort_index()
-
-    growth_rates = revenue.pct_change()
-    avg_growth = pd.Series(growth_rates[1:]).mean()
-
-    return revenue, avg_growth
-    
-#5 year revenue projection
-def get_revenue_projection(ticker, growth_rate):
-    stock= yf.Ticker(ticker)
-    revenue_projection = []
-    projection_years=[]
-    last_year = stock.income_stmt.columns[0].year
-    last_year_revenue= stock.income_stmt.loc['Total Revenue'].iloc[0]/1e9
-    
-    for x in range(5):
-        next_year_revenue = (last_year_revenue * (1 + growth_rate))
-        revenue_projection.append(round(next_year_revenue, 2))
-        last_year_revenue = next_year_revenue
-    
-        projection_years.append(last_year + (x + 1))
-        
-    return pd.Series(revenue_projection, projection_years) 
-
-def get_ebit_margin(ticker):
-    stock= yf.Ticker(ticker)
-    if 'Operating Income' in stock.income_stmt.index:
-        operating_income = stock.income_stmt.loc['Operating Income'].dropna()
-        revenue = stock.income_stmt.loc['Total Revenue'].dropna()
-        operating_margin = operating_income/ revenue
-        
-        return operating_income/1e9, operating_margin,  operating_margin.mean()
-        
-    else:
-        print("Operating Income not found")
-        
-def get_ebit_projection(revenue_projection, ebit_margin):
-    ebit_projection = []
-    
-    for revenue in revenue_projection:
-        ebit = revenue * ebit_margin
-        ebit_projection.append(round(ebit, 2))
-    return pd.Series(ebit_projection, revenue_projection.index) 
-
-def get_depreciation_and_amortization(ticker, projection):
-    stock= yf.Ticker(ticker)
-    if 'Depreciation And Amortization' in stock.cashflow.index:
-        da = stock.cashflow.loc['Depreciation And Amortization'].dropna()/1e9
-        revenue= stock.income_stmt.loc['Total Revenue'].dropna()/1e9
-        da_rate = (da/revenue).mean()
-        da = change_timestamp_to_year(da)
-        return da, da_rate * projection
-    else:
-        print("Depreciation & Amortization not found")
-
-def get_fcf_pv(fcf_projection, wacc):
-    discounted = []
-    
-    for t, fcf in enumerate(fcf_projection, start=1):
-        pv = fcf/((1 + wacc) ** t)
-        discounted.append(pv)
-        
-    return pd.Series(discounted, fcf_projection.index)  
-
-def get_terminal_value(fcf_projection, wacc):
-    terminal_growth = 0.02
-    final_year_fcf = fcf_projection.iloc[-1]
-    
-    terminal_value = (final_year_fcf * (1 + terminal_growth))/(wacc - terminal_growth)
-    
-    return terminal_value
-
-def get_pv_tv(tv, wacc):
-    n = 5
-    pv_tv= tv/((1 + wacc) ** n)
-
-    return pv_tv
-
-def get_enterprise_value(pv_fcf, pv_tv):
-    pv_fcf_sum = pv_fcf.sum()
-    
-    ev = pv_fcf_sum + pv_tv
-
-    return ev
-def get_net_debt(ticker):  
-    stock= yf.Ticker(ticker)
-    cash = stock.balance_sheet.loc['Cash Cash Equivalents And Short Term Investments'].iloc[0] 
-    debt = stock.balance_sheet.loc['Long Term Debt'].iloc[0] 
-    net_debt = debt - cash 
-
-    return cash/1e9, debt/1e9, net_debt/1e9
-
-def get_equity_value(ev, net_debt):
-    return ev - net_debt
-
-def get_implied_share_price(ticker, equity_value):
-    stock= yf.Ticker(ticker)
-    share_outstanding = stock.info['sharesOutstanding']/1e9
-    per_share_value = equity_value / share_outstanding
-
-    return share_outstanding, per_share_value
-
-def change_timestamp_to_year(value):
-    return value.groupby(value.index.year).sum()
-
-def get_total_cash(ticker, past_revenue):
-    stock= yf.Ticker(ticker)
-    total_cash = stock.balance_sheet.loc['Cash Cash Equivalents And Short Term Investments'].dropna() /1e9
-    total_cash = change_timestamp_to_year(total_cash)
-    cash_margin = (total_cash / past_revenue).mean()
-
-    return cash_margin, total_cash
-
-def get_receivables(ticker, past_recenue):
-    stock= yf.Ticker(ticker)
-    receivables = stock.balance_sheet.loc['Receivables'].dropna() /1e9
-    receivables = change_timestamp_to_year(receivables)
-    receivables_margin = (receivables/ past_revenue).mean()
-
-    return receivables_margin, receivables
-    
-def get_inventory(ticker, past_recenue):
-    stock= yf.Ticker(ticker)
-    inventory = stock.balance_sheet.loc['Inventory'].dropna() /1e9
-    inventory = change_timestamp_to_year(inventory)
-    inventory_margin = (inventory/ past_revenue).mean()
-
-    return inventory_margin, inventory
-    
-def get_payables(ticker, past_recenue):
-    stock= yf.Ticker(ticker)
-    payables = stock.balance_sheet.loc['Payables'].dropna() /1e9
-    payables = change_timestamp_to_year(payables)
-    payables_margin = (payables/ past_revenue).mean()
-
-    return payables_margin, payables
-
-def get_capEx(ticker, past_revenue):
-    stock= yf.Ticker(ticker)
-    
-    if 'Capital Expenditure' in stock.cashflow.index:
-        capex = abs(stock.cashflow.loc['Capital Expenditure'].dropna()/1e9)
-        capex = change_timestamp_to_year(capex)
-        capex_margin = (capex/past_revenue).mean()
-        
-        return capex_margin, capex
-    else:
-        print("Capital Expenditure not found")
-def get_ufcf_pv(ufcf, wacc): 
-    pv_ufcf = []
-    
-    for t, fcf in enumerate(ufcf, start=1):
-        pv = fcf/((1 + wacc) ** t)
-        pv_ufcf.append(pv)
-
-    return pd.Series(pv_ufcf, ufcf.index) 
+st.write("Estimate the intrinsic value of a stock using the DCF method.")
 
 # Get Ticker from the user
-ticker = "AAPL"
+st.sidebar.header("Model Parameters")
+
+ticker = st.sidebar.text_input("Enter Ticker Symbol", value="AAPL").upper()
+
+stock= yf.Ticker(ticker)
+
+try:
+    info = stock.info
+    if not info or "shortName" not in info or info["regularMarketPrice"] is None:
+        raise ValueError
+except Exception:
+    st.error("Invalid ticker symbol or data not available. Please try again.")
+    st.stop()
+
+past_revenue, _, avg_growth = get_revenue_projection(stock)
+
+custom_growth = st.sidebar.slider("Revenue Growth Rate", 
+                                  min_value = 0.01, 
+                                    max_value= 0.50, 
+                                        value=float(round(avg_growth,2)),
+                                             step = 0.01 
+                                 )
+
+_, projection, _ = get_revenue_projection(stock,custom_growth)
 
 #Call functions to get data about the ticker and start projection
-past_revenue, rate = get_revenue_growth(ticker)
-wacc, beta, cost_of_debt, tax_rate, risk_free_rate, market_return, cost_of_equity, total_debt, market_cap, total_value = get_wacc(ticker)
-projection = get_revenue_projection(ticker=ticker, growth_rate= rate)
-past_ebit, past_ebit_margin, ebit_margin= get_ebit_margin(ticker)
-ebit = get_ebit_projection(projection, ebit_margin)
-past_da, da_estimite = get_depreciation_and_amortization(ticker, projection)
+
+wacc, beta, cost_of_debt, tax_rate, risk_free_rate, market_return, cost_of_equity, total_debt, market_cap, total_value = get_wacc(stock)
+
+past_ebit, _, ebit_margin  = get_ebit_projection(stock, projection, past_revenue)
+
+custom_ebit_margin = st.sidebar.slider("Ebit %", 
+                                  min_value = 0.01, 
+                                    max_value= 0.70, 
+                                        value=float(round(ebit_margin,2)),
+                                             step = 0.01 
+                                 )
+
+_, ebit ,_= get_ebit_projection(stock, projection, past_revenue, custom_ebit_margin)
+
+past_da, da_estimite = get_depreciation_and_amortization(stock, projection)
 
 # Operating Data
 past_revenue = change_timestamp_to_year(past_revenue)
@@ -230,49 +71,33 @@ operating_data_df = pd.DataFrame(data=[revenue_output, revenue_pct_change, ebit_
                                     index=['Revenue','Revenue %', 'EBIT', 'EBIT %','Depreciation', 'Depreciation %'])
 
 # Balance Sheet
-
 ## Total Cash forecast
-
-cash_margin, past_total_cash = get_total_cash(ticker, past_revenue)
-total_cash_estimite = projection * cash_margin
-total_cash_output = pd.concat([past_total_cash, total_cash_estimite])
-cash_margin_output = total_cash_output / revenue_output
+total_cash_output, cash_margin_output = forecast_balance_item(
+    "balance_sheet", "Cash Cash Equivalents And Short Term Investments", projection, stock, past_revenue, revenue_output )
 
 ## Receivable forecast
-
-receivable_margin, past_receivales = get_receivables(ticker, past_revenue)
-receivable_estimite = projection * receivable_margin
-receivable_output = pd.concat([past_receivales, receivable_estimite])
-receivable_margin_output = receivable_output/ revenue_output
+receivable_output, receivable_margin_output = forecast_balance_item(
+    "balance_sheet", "Receivables" , projection, stock, past_revenue, revenue_output )
 
 ## Inventory forecast
-
-inventory_margin, past_inventory = get_inventory(ticker, past_revenue)
-inventory_estimite = projection * inventory_margin
-inventory_output = pd.concat([past_inventory, inventory_estimite])
-inventory_margin_output = inventory_output/ revenue_output
+inventory_output, inventory_margin_output = forecast_balance_item(
+    "balance_sheet","Inventory", projection, stock, past_revenue, revenue_output )
 
 ## Payable forecast
-
-payable_margin, past_payable = get_payables(ticker, past_revenue)
-payable_estimite = projection * payable_margin
-payable_output = pd.concat([past_payable, payable_estimite])
-payable_margin_output = payable_output/ revenue_output
+payable_output, payable_margin_output = forecast_balance_item(
+    "balance_sheet","Payables", projection, stock, past_revenue, revenue_output )
 
 ## CAP EX forecast
-capex_margin, past_capex = get_capEx(ticker, past_revenue)
-capex_estimite = projection * capex_margin
-capex_output = pd.concat([past_capex, capex_estimite])
-capex_margin_output = capex_output/ revenue_output
+capex_output, capex_margin_output = forecast_balance_item(
+    "cashflow", "Capital Expenditure", projection, stock, past_revenue, revenue_output)
 
 balance_sheet_df = pd.DataFrame(data=[total_cash_output, cash_margin_output, receivable_output, receivable_margin_output,
                                          inventory_output,inventory_margin_output, payable_output, payable_margin_output, 
                                                 capex_output, capex_margin_output],
-                                    index=['Total Cash', 'Total Cash %', 'Receivables', 'Receivables %', 'Inventories', 'Inventories %',
-                                                'Payable', 'Payable %', 'Cap Ex', 'Cap EX %'])
+                                                    index=['Total Cash', 'Total Cash %', 'Receivables', 'Receivables %', 'Inventories', 'Inventories %',
+                                                                'Payable', 'Payable %', 'Cap Ex', 'Cap EX %'])
 
 # Weignted Average Cost of Capital
-
 metrics = [
     ('Beta', f"{beta:.2f}"),
     ('Cost of Debt', f"{cost_of_debt:.2%}"),
@@ -289,7 +114,6 @@ metrics = [
 wacc_df = pd.DataFrame(metrics, columns=['', 'Value']).set_index('')
 
 # Build Up Free Cash Flow
-
 ebiat_output = ebit_output * (1 - tax_rate)
 operating_wc = receivable_output + inventory_output - payable_output
 delta_operating_wc = operating_wc.diff()
@@ -299,17 +123,17 @@ pv_ufcf_output = get_ufcf_pv(ufcf_output, wacc)
 cash_flow_df = pd.DataFrame(data=[revenue_output, ebit_output, ebiat_output, da_output, receivable_output,
                                         inventory_output, payable_output, capex_output, delta_operating_wc, 
                                             ufcf_output, pv_ufcf_output],                
-                                index=['Revenue','EBIT','EBIT After Tax' ,'Depreciation' , 'Receivables',
-                                        'Inventories', 'Payable', 'Cap Ex', 'Change in NWC(-)','Unlevered FCF',
-                                                'Present Value of FCF'])
+                                                index=['Revenue','EBIT','EBIT After Tax' ,'Depreciation' , 'Receivables',
+                                                        'Inventories', 'Payable', 'Cap Ex', 'Change in NWC(-)','Unlevered FCF',
+                                                                'Present Value of FCF'])
 # Terminal Value and Intrinsic Value
-
 tv_output = get_terminal_value(ufcf_output, wacc)
 pv_tv_output = get_pv_tv(tv_output, wacc)
 ev_output = get_enterprise_value(pv_ufcf_output, pv_tv_output)
-cash, debt, net_debt = get_net_debt(ticker)
+cash, debt, net_debt = get_net_debt(stock)
 equity_value_output = get_equity_value(ev_output, net_debt)
-share_count, share_price = get_implied_share_price(ticker, equity_value_output)
+share_count = get_shares_outstanding(stock)
+share_price = get_implied_share_price(share_count, equity_value_output)
 
 metrics_2 = [
     ('Terminal Value', f"${tv_output:,.2f}B"),
@@ -324,20 +148,10 @@ metrics_2 = [
 
 interinsic_value_df = pd.DataFrame(metrics_2, columns=['', 'Value']).set_index('')
 
-
-
-st.set_page_config(page_title="DCF Valuation App", layout="wide")
-
-st.title("Discounted Cash Flow (DCF) Valuation")
-
-st.write("Estimate the intrinsic value of a stock using the DCF method.")
-
-st.sidebar.header("Model Parameters")
-ticker = st.sidebar.text_input("Ticker Symbol", value="AAPL")
 wacc = st.sidebar.slider("Discount Rate (WACC)", min_value=0.05, max_value=0.15, value=0.10, step=0.005)
 terminal_growth = st.sidebar.slider("Terminal Growth Rate", min_value=0.005, max_value=0.05, value=0.025, step=0.0025)
 
-st.sidebar.header("Model Parameters")
+st.sidebar.header("Weighted Average Cost Of Capital")
 st.sidebar.table(wacc_df)
 
 st.write("""
