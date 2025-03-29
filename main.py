@@ -57,6 +57,11 @@ _, ebit ,_= get_ebit_projection(stock, projection, past_revenue, custom_ebit_mar
 
 past_da, da_estimite = get_depreciation_and_amortization(stock, projection)
 
+wacc = st.sidebar.slider("Discount Rate (WACC)",
+                          min_value=0.05, 
+                            max_value=0.25,
+                                 value= wacc,  
+                                   step=0.005)
 # Operating Data
 past_revenue = change_timestamp_to_year(past_revenue)
 revenue_output = pd.concat([past_revenue, projection])
@@ -127,7 +132,16 @@ cash_flow_df = pd.DataFrame(data=[revenue_output, ebit_output, ebiat_output, da_
                                                         'Inventories', 'Payable', 'Cap Ex', 'Change in NWC(-)','Unlevered FCF',
                                                                 'Present Value of FCF'])
 # Terminal Value and Intrinsic Value
-tv_output = get_terminal_value(ufcf_output, wacc)
+tv_output, default_growth = get_terminal_value(ufcf_output, wacc)
+
+terminal_growth = st.sidebar.slider("Terminal Growth Rate", 
+                                    min_value=0.005, 
+                                        max_value=0.05,
+                                            value= float(round(default_growth, 4)), 
+                                                step=0.0025)
+
+tv_output, _ = get_terminal_value(ufcf_output, wacc, terminal_growth)
+
 pv_tv_output = get_pv_tv(tv_output, wacc)
 ev_output = get_enterprise_value(pv_ufcf_output, pv_tv_output)
 cash, debt, net_debt = get_net_debt(stock)
@@ -148,8 +162,8 @@ metrics_2 = [
 
 interinsic_value_df = pd.DataFrame(metrics_2, columns=['', 'Value']).set_index('')
 
-wacc = st.sidebar.slider("Discount Rate (WACC)", min_value=0.05, max_value=0.15, value=0.10, step=0.005)
-terminal_growth = st.sidebar.slider("Terminal Growth Rate", min_value=0.005, max_value=0.05, value=0.025, step=0.0025)
+
+
 
 st.sidebar.header("Weighted Average Cost Of Capital")
 st.sidebar.table(wacc_df)

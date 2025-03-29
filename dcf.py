@@ -5,10 +5,12 @@ import yfinance as yf
 import pandas as pd
 
 
-def get_terminal_value(fcf_projection, wacc, terminal_growth = 0.02):
+def get_terminal_value(fcf_projection, wacc, custom_growth=None):
+    terminal_growth = 0.02
+    growth = custom_growth if custom_growth is not None else terminal_growth
     final_year_fcf = fcf_projection.iloc[-1]
-    tv = (final_year_fcf * (1 + terminal_growth))/(wacc - terminal_growth)
-    return round(tv,2)
+    tv = (final_year_fcf * (1 + growth))/(wacc - growth)
+    return round(tv,2), growth
 
 def get_pv_tv(tv, wacc, forecast_years = 5):
     pv_tv= tv/((1 + wacc) ** forecast_years)
