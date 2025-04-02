@@ -2,9 +2,10 @@ import pandas as pd
 import yfinance as yf
 from datetime import datetime as dt
 import streamlit as st
+pd.set_option('future.no_silent_downcasting', True)
 
 from dcf import ( get_terminal_value, get_pv_tv, get_enterprise_value, get_equity_value, get_implied_share_price, get_wacc, get_ufcf_pv)
-from data import (get_revenue_projection, get_ebit_projection, get_net_debt, get_shares_outstanding, get_depreciation_and_amortization)
+from data import (get_revenue_projection, get_ebit_projection, get_net_debt, get_shares_outstanding, get_depreciation_and_amortization, get_spy500_tickers)
 from utils import (change_timestamp_to_year, forecast_balance_item)
 
 
@@ -17,7 +18,7 @@ st.write("Estimate the intrinsic value of a stock using the DCF method.")
 # Get Ticker from the user
 st.sidebar.header("Model Parameters")
 
-ticker = st.sidebar.text_input("Enter Ticker Symbol", value="AAPL").upper()
+ticker = st.sidebar.text_input("Enter Ticker Symbol", value='AAPL').upper()
 
 stock= yf.Ticker(ticker)
 
@@ -32,11 +33,11 @@ except Exception:
 past_revenue, _, avg_growth = get_revenue_projection(stock)
 
 custom_growth = st.sidebar.slider("Revenue Growth Rate", 
-                                  min_value = 0.01, 
+                                min_value = 0.01, 
                                     max_value= 0.50, 
                                         value=float(round(avg_growth,2)),
-                                             step = 0.01 
-                                 )
+                                            step = 0.01 
+                                )
 
 _, projection, _ = get_revenue_projection(stock,custom_growth)
 
@@ -47,21 +48,21 @@ wacc, beta, cost_of_debt, tax_rate, risk_free_rate, market_return, cost_of_equit
 past_ebit, _, ebit_margin  = get_ebit_projection(stock, projection, past_revenue)
 
 custom_ebit_margin = st.sidebar.slider("Ebit %", 
-                                  min_value = 0.01, 
+                                min_value = 0.01, 
                                     max_value= 0.70, 
                                         value=float(round(ebit_margin,2)),
-                                             step = 0.01 
-                                 )
+                                            step = 0.01 
+                                )
 
 _, ebit ,_= get_ebit_projection(stock, projection, past_revenue, custom_ebit_margin)
 
-past_da, da_estimite = get_depreciation_and_amortization(stock, projection)
+past_da, da_estimite = get_depreciation_and_amortization(stock, projection, past_revenue)
 
 wacc = st.sidebar.slider("Discount Rate (WACC)",
-                          min_value=0.05, 
+                        min_value=0.05, 
                             max_value=0.25,
-                                 value= wacc,  
-                                   step=0.005)
+                                value= wacc,  
+                                step=0.005)
 # Operating Data
 past_revenue = change_timestamp_to_year(past_revenue)
 revenue_output = pd.concat([past_revenue, projection])
@@ -97,7 +98,7 @@ capex_output, capex_margin_output = forecast_balance_item(
     "cashflow", "Capital Expenditure", projection, stock, past_revenue, revenue_output)
 
 balance_sheet_df = pd.DataFrame(data=[total_cash_output, cash_margin_output, receivable_output, receivable_margin_output,
-                                         inventory_output,inventory_margin_output, payable_output, payable_margin_output, 
+                                        inventory_output,inventory_margin_output, payable_output, payable_margin_output, 
                                                 capex_output, capex_margin_output],
                                                     index=['Total Cash', 'Total Cash %', 'Receivables', 'Receivables %', 'Inventories', 'Inventories %',
                                                                 'Payable', 'Payable %', 'Cap Ex', 'Cap EX %'])
@@ -170,22 +171,21 @@ st.sidebar.table(wacc_df)
 
 st.write("""
 **Operating Data**
-         """)
+        """)
 
 st.write(operating_data_df)
 
 st.write("""
 **Balance Sheet**
-         """)
+        """)
 st.write(balance_sheet_df)
 
 st.write("""
 **Build Up Free Cash Flow**
-         """)
+        """)
 st.write(cash_flow_df)
 
 st.write("""
 **Terminal Value and Intrinsic Value**
-         """)
+        """)
 st.write(interinsic_value_df)
-

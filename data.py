@@ -3,7 +3,16 @@ Handles all data fetching and projection logic using yfinance
 """
 import yfinance as yf
 import pandas as pd
-from utils import (change_timestamp_to_year)
+from utils import (change_timestamp_to_year, get_best_match_index)
+
+def get_spy500_tickers():
+    url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
+    tables = pd.read_html(url)
+    df = tables[0]
+    spy_tickers= [x for x in df['Symbol']]
+
+    return spy_tickers
+
 
 #5 year revenue projection
 def get_revenue_projection(stock, growth_rate=None):
@@ -32,8 +41,12 @@ def get_revenue_projection(stock, growth_rate=None):
     return round(revenue,2), projections, avg_growth
 
 def get_ebit_projection(stock, revenue_projection, past_revenue, growth_rate=None):
-    if 'Operating Income' in stock.income_stmt.index:
-        ebit = stock.income_stmt.loc['Operating Income'].dropna() / 1e9
+    income_s = stock.income_stmt
+    line_item = 'Operating Income'
+    # income_s[income_s.index.to_series().str.contains('Operating Income', regex= True)].index[0]
+
+    if line_item in income_s.index:
+        ebit = income_s.loc[line_item].dropna() / 1e9
         ebit = ebit.sort_index()
 
         margin = (ebit / past_revenue).mean()
@@ -46,24 +59,33 @@ def get_ebit_projection(stock, revenue_projection, past_revenue, growth_rate=Non
 
         return ebit, projected_ebit, margin
     else:
-        print("Operating Income not found")
+        print(f"Operating Income not found for ticker {stock.ticker}")
 
-def get_net_debt(stock):  
-    bs = stock.balance_sheet
-    cash = bs.loc['Cash Cash Equivalents And Short Term Investments'].iloc[0] / 1e9
-    debt = bs.loc['Long Term Debt'].iloc[0] / 1e9
-    return cash, debt, debt - cash
+def get_net_debt(stock):
+    if 'Cash Cash Equivalents And Short Term Investments' in stock.balance_sheet.index:  
+        bs = stock.balance_sheet
+        line_item = bs[bs.index.to_series().str.contains('Long Term Debt', regex=True)].index[0]
+        cash = bs.loc['Cash Cash Equivalents And Short Term Investments'].iloc[0] / 1e9
+        debt = bs.loc[line_item].iloc[0] / 1e9
+        if pd.isna(debt):
+            debt=0
+        return cash, debt, debt - cash
+    else:
+        print(f"Cash Cash Equivalents And Short Term Investments for ticker {stock.ticker}")
 
 def get_shares_outstanding(stock):
     return round(stock.info.get('sharesOutstanding', 0) / 1e9, 2)
 
-def get_depreciation_and_amortization(stock, projection):
-    if 'Depreciation And Amortization' in stock.cashflow.index:
-        da = stock.cashflow.loc['Depreciation And Amortization'].dropna()/1e9
-        revenue= stock.income_stmt.loc['Total Revenue'].dropna()/1e9
-        da_rate = (da/revenue).mean()
+def get_depreciation_and_amortization(stock, projection, past_revenue):
+    cf = stock.cashflow.index
+    target = 'Depreciation And Amortization'
+    line_item = get_best_match_index(cf, target)
+
+    if pd.notnull(line_item):
+        da = stock.cashflow.loc[line_item].dropna()/1e9
+        da_rate = (da/past_revenue).mean()
         da = change_timestamp_to_year(da)
         return da, da_rate * projection
     else:
-        print("Depreciation & Amortization not found")
+        print(f"Depreciation & Amortization not found for ticker {stock.ticker}")
   
