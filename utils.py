@@ -23,20 +23,6 @@ def forecast_balance_item(statement, line_item, projection, stock, past_revenue,
     
     return full_series, margin_output
 
-# def get_margin_item(stock, statement, line_item, past_revenue):
-#     source = getattr(stock, statement)
-
-#     if line_item == "Capital Expenditure":
-#         values = abs(source.loc[line_item].dropna() / 1e9)
-#     else:
-#         values = source.loc[line_item].dropna() / 1e9
-
-#     values = change_timestamp_to_year(values)
-
-#     margin = (values / past_revenue).mean()
-
-#     return margin, values
-
 def get_margin_item(stock, statement, line_item, past_revenue):
     source = getattr(stock, statement)
 

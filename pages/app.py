@@ -8,17 +8,22 @@ from dcf import ( get_terminal_value, get_pv_tv, get_enterprise_value, get_equit
 from data import (get_revenue_projection, get_ebit_projection, get_net_debt, get_shares_outstanding, get_depreciation_and_amortization, get_spy500_tickers)
 from utils import (change_timestamp_to_year, forecast_balance_item)
 
+# Run the selected page
 
 st.set_page_config(page_title="DCF Valuation App", layout="wide")
 
-st.title("Discounted Cash Flow (DCF) Valuation")
+ticker = st.session_state.get("ticker", "")
 
-st.write("Estimate the intrinsic value of a stock using the DCF method.")
+if not ticker:
+    ticker = st.sidebar.text_input("Enter Ticker Symbol", value='AAPL').upper()
+    st.title(f"📊 DCF Analysis for {ticker}")
+    st.write("Estimate the intrinsic value of a stock using the DCF method.")
+else:
+    st.title(f"📊 DCF Analysis for {ticker}")
+    st.write("Estimate the intrinsic value of a stock using the DCF method.")
 
 # Get Ticker from the user
 st.sidebar.header("Model Parameters")
-
-ticker = st.sidebar.text_input("Enter Ticker Symbol", value='AAPL').upper()
 
 stock= yf.Ticker(ticker)
 
@@ -164,28 +169,28 @@ metrics_2 = [
 interinsic_value_df = pd.DataFrame(metrics_2, columns=['', 'Value']).set_index('')
 
 
-
-
 st.sidebar.header("Weighted Average Cost Of Capital")
 st.sidebar.table(wacc_df)
 
-st.write("""
-**Operating Data**
-        """)
+tab1, tab2, tab3, tab4 = st.tabs(["🏁 Terminal Value", "📄 Balance Sheet", "💸 FCF Build-up", "📊 Operating Data"])
 
-st.write(operating_data_df)
+with tab1:
+    st.table(interinsic_value_df
+                 )
+    
 
-st.write("""
-**Balance Sheet**
-        """)
-st.write(balance_sheet_df)
+with tab2:
+    st.dataframe(balance_sheet_df.style.format("{:,.2f}"),
+                 use_container_width=True,  
+                 )
 
-st.write("""
-**Build Up Free Cash Flow**
-        """)
-st.write(cash_flow_df)
+with tab3:
+    st.dataframe(cash_flow_df.style.format("{:,.2f}"),
+                 use_container_width=True,  
+                 height=423
 
-st.write("""
-**Terminal Value and Intrinsic Value**
-        """)
-st.write(interinsic_value_df)
+                 )
+with tab4:
+    st.dataframe(operating_data_df.style.format("{:,.2f}"),
+                 use_container_width=True,  
+                 )
